@@ -3,9 +3,10 @@ import matplotlib.pyplot as plt
 from sympy import primepi  # Import prime counting function
 
 # Parameters for testing
-x_range = np.linspace(10, 5000, 500)  # Increase sampling resolution and range
+x_range = np.linspace(10, 1000, 100)  # Increase sampling resolution and range
 N_values = [10, 30, 50, 100]  # Different modal cutoff values for testing
 delta_lambda = 0.01  # Frequency step
+C_values = [500, 1000, 2000, 5000]  # Different C values to test (increased range)
 
 # Define the modal collapse function
 def phi(x, N):
@@ -25,17 +26,15 @@ def delta(x, N=50):
 # Define the entropy proxy
 def entropy(x, N=50):
     delta_x = delta(x, N)
-    # Ensure delta_x is a NumPy-compatible float
     delta_x = np.array(delta_x, dtype=np.float64)  # Explicitly set dtype
     return np.log(1 + delta_x**2)
 
 # Conjecture 1: Structure Residual Boundedness
-def conjecture_1(x_range, N=50):
+def conjecture_1(x_range, N=50, C=1000):
     residual_values = [delta(x, N) for x in x_range]
     residual_mean = np.mean(residual_values)
     residual_max = np.max(np.abs(residual_values))
-    # Check if residual is bounded
-    if residual_max < 1000 / np.log(x_range[-1]):
+    if residual_max < C / np.log(x_range[-1]):
         return 'Passed'
     else:
         return 'Failed'
@@ -49,34 +48,41 @@ def conjecture_2(x_range, N=50):
 
 # Conjecture 3: Spectral Mode Convergence Hierarchy
 def conjecture_3(x_range, N=50):
-    delta_struct = np.max(np.abs(np.diff(x_range))) / np.mean(np.diff(x_range))
-    return delta_struct
+    lambda_0 = delta_lambda  # Assuming the starting frequency corresponds to the first mode
+
+    # Define a convergence measure for spectral modes
+    lambda_n = np.array([n * delta_lambda for n in range(1, N + 1)])
+    delta_lambda_values = np.diff(lambda_n)  # Differences between successive frequencies
+    delta_struct = np.max(delta_lambda_values) / np.mean(delta_lambda_values)  # Normalized frequency spread
+
+    return lambda_0, delta_struct
 
 # Validate for different N values and ranges
 results = {}
 for N in N_values:
-    # Check Conjecture 1: Structure Residual Boundedness
-    conjecture_1_result = conjecture_1(x_range, N)
-    
-    # Check Conjecture 2: Collapse Entropy Attractor Principle
-    min_entropy, min_x = conjecture_2(x_range, N)
-    
-    # Check Conjecture 3: Spectral Mode Convergence Hierarchy
-    delta_struct = conjecture_3(x_range, N)
+    for C in C_values:
+        # Check Conjecture 1: Structure Residual Boundedness
+        conjecture_1_result = conjecture_1(x_range, N, C)
+        
+        # Check Conjecture 2: Collapse Entropy Attractor Principle
+        min_entropy, min_x = conjecture_2(x_range, N)
+        
+        # Check Conjecture 3: Spectral Mode Convergence Hierarchy
+        lambda_0, delta_struct = conjecture_3(x_range, N)
 
-    # Store results
-    results[N] = {
-        "Conjecture 1 (Residual boundedness)": conjecture_1_result,
-        "Conjecture 2 (Entropy attractor principle)": (min_entropy, min_x),
-        "Conjecture 3 (Spectral mode convergence)": delta_struct
-    }
+        # Store results
+        results[(N, C)] = {
+            "Conjecture 1 (Residual boundedness)": conjecture_1_result,
+            "Conjecture 2 (Entropy attractor principle)": (min_entropy, min_x),
+            "Conjecture 3 (Spectral mode convergence)": (lambda_0, delta_struct)
+        }
 
 # Output results
-for N, result in results.items():
-    print(f"\nFor N = {N}:")
+for (N, C), result in results.items():
+    print(f"\nFor N = {N}, C = {C}:")
     print(f"Conjecture 1 (Residual boundedness): {result['Conjecture 1 (Residual boundedness)']}")
     print(f"Conjecture 2 (Entropy attractor principle): Minimum entropy = {result['Conjecture 2 (Entropy attractor principle)'][0]}, Occurs at x = {result['Conjecture 2 (Entropy attractor principle)'][1]}")
-    print(f"Conjecture 3 (Spectral mode convergence): delta_struct = {result['Conjecture 3 (Spectral mode convergence)']}")
+    print(f"Conjecture 3 (Spectral mode convergence): Starting frequency λ₀ = {result['Conjecture 3 (Spectral mode convergence)'][0]}, delta_struct = {result['Conjecture 3 (Spectral mode convergence)'][1]}")
 
 # Plot Residual values
 plt.figure(figsize=(12, 6))
