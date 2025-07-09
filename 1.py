@@ -67,7 +67,7 @@ for combo in combinations:
     print(f"\n=== Testing Zero Combination {combo} ===")
     lambda_n = [rho_imag[n-1] for n in combo]
     initial_theta = [rho_arg[n-1] for n in combo]
-    
+
     # 未优化
     alpha = 1.5
     k = 1e-6
@@ -79,7 +79,7 @@ for combo in combinations:
     print(f"delta(x) = {float(delta_x):.6e}")
     print(f"Relative error = {float(error_rho):.6e}")
     print(f"Improvement over 1/log(x) = {float(error_base/error_rho):.2f}x")
-    
+
     # 优化
     result = optimize_params(x, lambda_n, N, initial_theta)
     alpha_opt, k_opt, theta_n_opt = result.x[0], result.x[1], result.x[2:]
@@ -91,3 +91,4 @@ for combo in combinations:
     print(f"delta(x) = {float(delta_x_opt):.6e}")
     print(f"Relative error = {float(error_rho_opt):.6e}")
     print(f"Improvement over 1/log(x) = {float(error_base/error_rho_opt):.2f}x")
+
