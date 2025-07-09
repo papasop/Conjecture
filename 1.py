@@ -1,18 +1,26 @@
 import numpy as np
 import mpmath
-from scipy.optimize import minimize
+from scipy.optimize import minimize, dual_annealing
+import itertools
+import random
 
 # 设置 mpmath 精度
 mpmath.mp.dps = 50
 
 # 参数设置
-N_values = [3, 5, 7, 10]
-alpha_values = [1, 1.1, 1.2, 1.3, 1.4, 1.5]
 x = mpmath.power(2, 2048)
+N = 3
+combinations = [
+    [1, 2, 3],  # 低频
+    [50, 75, 100],  # 中频
+    [100, 125, 150],  # 高频
+    [1, 50, 100],  # 混合
+    [41, 109, 88], [72, 40, 56], [87, 27, 24]  # 随机组合
+]
 
-# 获取前 10 个零点虚部和相位
-rho_imag = [mpmath.im(mpmath.zetazero(n+1)) for n in range(10)]
-rho_arg = [mpmath.arg(mpmath.zetazero(n+1)) for n in range(10)]
+# 获取前 150 个零点虚部和相位
+rho_imag = [mpmath.im(mpmath.zetazero(n+1)) for n in range(150)]
+rho_arg = [mpmath.arg(mpmath.zetazero(n+1)) for n in range(150)]
 
 # 计算 phi(x)
 def compute_phi(x, lambda_n, A_n, theta_n, N):
@@ -36,66 +44,50 @@ def compute_delta(x, rho_x):
     pi_over_x = estimate_pi_over_x(x)
     return pi_over_x - rho_x
 
-# 验证 |delta(x)| < C/log(x)
-def verify_bound(delta, x, C):
-    bound = C / mpmath.log(x)
-    return abs(delta) < bound, bound
-
-# 联合优化 alpha, k, theta_n
-def optimize_params(x, lambda_n, N):
-    def joint_objective(params):
+# 优化 alpha, k, theta_n
+def optimize_params(x, lambda_n, N, initial_theta):
+    def objective(params):
         alpha, k = params[:2]
         theta = params[2:]
         A_n = [k / ((n+1)**alpha) for n in range(N)]
-        return float(abs(compute_delta(x, compute_rho(x, lambda_n, A_n, theta, N)))) + 1e-6 * np.sum(np.square(theta))
-    initial_guess = [1.2, 1e-6] + [float(rho_arg[n]) + np.random.uniform(-0.1, 0.1) for n in range(N)]
-    bounds = [(0.5, 2), (1e-6, 1e-4)] + [(-np.pi, np.pi)]*N
-    best_result = min([minimize(joint_objective, x0=initial_guess, method='L-BFGS-B', bounds=bounds, options={'maxiter': 2000}) for _ in range(5)], key=lambda r: r.fun)
-    return best_result.x[0], best_result.x[1], best_result.x[2:]
+        return float(abs(compute_delta(x, compute_rho(x, lambda_n, A_n, theta, N))))
+    initial_guess = [1.5, 1e-5] + [initial_theta[n] + np.random.uniform(-1, 1) for n in range(N)]
+    bounds = [(0.5, 2), (1e-7, 1e-4)] + [(-np.pi, np.pi)]*N
+    # 尝试 L-BFGS-B 和全局优化
+    result_lbfgs = min([minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=bounds, options={'maxiter': 2000}) for _ in range(20)], key=lambda r: r.fun)
+    result_global = dual_annealing(objective, bounds=bounds, maxiter=2000)
+    return min([result_lbfgs, result_global], key=lambda r: objective(r.x))
 
 # 主程序
-x_str = f"2^{int(mpmath.log(x)/mpmath.log(2))}"
-for N in N_values:
-    print(f"\n=== Testing N = {N} ===")
-    lambda_n = rho_imag[:N]
-    theta_n = rho_arg[:N]
+pi_over_x = estimate_pi_over_x(x)
+error_base = abs(1 / mpmath.log(x) - pi_over_x) / pi_over_x
+print(f"Baseline: 1/log(x) error = {float(error_base):.6e}")
+
+for combo in combinations:
+    print(f"\n=== Testing Zero Combination {combo} ===")
+    lambda_n = [rho_imag[n-1] for n in combo]
+    initial_theta = [rho_arg[n-1] for n in combo]
     
-    for alpha in alpha_values:
-        print(f"\n=== Testing alpha = {alpha} ===")
-        print(f"\nTesting x = {x_str}")
-        
-        A_n = [1e-6 / ((n+1)**alpha) for n in range(N)]
-        phi_x = compute_phi(x, lambda_n, A_n, theta_n, N)
-        rho_x = compute_rho(x, lambda_n, A_n, theta_n, N)
-        delta_x = compute_delta(x, rho_x)
-        pi_over_x = estimate_pi_over_x(x)
-        
-        C_values = [10, 100, 1000]
-        bound_results = []
-        for C in C_values:
-            is_bounded, bound = verify_bound(delta_x, x, C)
-            bound_results.append((C, is_bounded, bound))
-        
-        error_rho = abs(rho_x - pi_over_x) / pi_over_x
-        error_base = abs(1 / mpmath.log(x) - pi_over_x) / pi_over_x
-        
-        print(f"phi(x) = {float(phi_x):.6e}")
-        print(f"rho(x) = 1/log(x) + phi(x) = {float(rho_x):.6e}")
-        print(f"pi(x)/x (approx) = {float(pi_over_x):.6e}")
-        print(f"delta(x) = {float(delta_x):.6e}")
-        print("\nBound verification (|delta(x)| < C/log(x)):")
-        for C, is_bounded, bound in bound_results:
-            print(f"C = {C}: |delta(x)| = {float(abs(delta_x)):.6e} < {float(bound):.6e} ? {is_bounded}")
-        print(f"\nRelative error of rho(x): {float(error_rho):.6e}")
-        print(f"Relative error of 1/log(x): {float(error_base):.6e}")
-        
-        print(f"\nOptimizing alpha, k, theta_n for x = {x_str}")
-        alpha_opt, k_opt, theta_n_opt = optimize_params(x, lambda_n, N)
-        A_n_opt = [k_opt / ((n+1)**alpha_opt) for n in range(N)]
-        rho_x_opt = compute_rho(x, lambda_n, A_n_opt, theta_n_opt, N)
-        delta_x_opt = compute_delta(x, rho_x_opt)
-        error_rho_opt = abs(rho_x_opt - pi_over_x) / pi_over_x
-        print(f"Optimized alpha = {alpha_opt:.6e}")
-        print(f"Optimized k = {k_opt:.6e}")
-        print(f"Optimized delta(x) = {float(delta_x_opt):.6e}")
-        print(f"Optimized relative error of rho(x): {float(error_rho_opt):.6e}")
+    # 未优化
+    alpha = 1.5
+    k = 1e-6
+    A_n = [k / ((n+1)**alpha) for n in range(N)]
+    rho_x = compute_rho(x, lambda_n, A_n, initial_theta, N)
+    delta_x = compute_delta(x, rho_x)
+    error_rho = abs(rho_x - pi_over_x) / pi_over_x
+    print(f"Unoptimized: alpha = {alpha}, k = {k:.6e}")
+    print(f"delta(x) = {float(delta_x):.6e}")
+    print(f"Relative error = {float(error_rho):.6e}")
+    print(f"Improvement over 1/log(x) = {float(error_base/error_rho):.2f}x")
+    
+    # 优化
+    result = optimize_params(x, lambda_n, N, initial_theta)
+    alpha_opt, k_opt, theta_n_opt = result.x[0], result.x[1], result.x[2:]
+    A_n_opt = [k_opt / ((n+1)**alpha_opt) for n in range(N)]
+    rho_x_opt = compute_rho(x, lambda_n, A_n_opt, theta_n_opt, N)
+    delta_x_opt = compute_delta(x, rho_x_opt)
+    error_rho_opt = abs(rho_x_opt - pi_over_x) / pi_over_x
+    print(f"Optimized: alpha = {alpha_opt:.6e}, k = {k_opt:.6e}")
+    print(f"delta(x) = {float(delta_x_opt):.6e}")
+    print(f"Relative error = {float(error_rho_opt):.6e}")
+    print(f"Improvement over 1/log(x) = {float(error_base/error_rho_opt):.2f}x")
