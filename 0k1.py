@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import mpmath
+from scipy.optimize import minimize, dual_annealing
 
 # 设置 mpmath 精度
 mpmath.mp.dps = 50
@@ -33,19 +34,22 @@ def compute_delta(x, rho_x):
     return pi_over_x - rho_x
 
 # 优化 alpha, k, theta_n
-def optimize_params(x, lambda_n, N, initial_theta):
+def optimize_params_fine_tuned(x, lambda_n, N, initial_theta):
     def objective(params):
         alpha, k = params[:2]
         theta = params[2:]
         A_n = [k / ((n+1)**alpha) for n in range(N)]
         return float(abs(compute_delta(x, compute_rho(x, lambda_n, A_n, theta, N))))
+
+    # 更精细的初始猜测和边界
+    initial_guess = [1.5, 1e-6] + [initial_theta[n] + np.random.uniform(-0.1, 0.1) for n in range(N)]
+    bounds = [(0.5, 2), (1e-8, 1e-4)] + [(-np.pi, np.pi)]*N
+
+    # 增加迭代次数
+    result_lbfgs = min([minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=bounds, options={'maxiter': 5000}) for _ in range(30)], key=lambda r: r.fun)
+    result_global = dual_annealing(objective, bounds=bounds, maxiter=5000)
     
-    initial_guess = [1.5, 1e-5] + [initial_theta[n] + np.random.uniform(-1, 1) for n in range(N)]
-    bounds = [(0.5, 2), (1e-7, 1e-4)] + [(-np.pi, np.pi)]*N
-    
-    # 尝试 L-BFGS-B 和全局优化
-    result_lbfgs = min([minimize(objective, x0=initial_guess, method='L-BFGS-B', bounds=bounds, options={'maxiter': 2000}) for _ in range(20)], key=lambda r: r.fun)
-    result_global = dual_annealing(objective, bounds=bounds, maxiter=2000)
+    # 返回最优结果
     return min([result_lbfgs, result_global], key=lambda r: objective(r.x))
 
 # 主程序
@@ -67,26 +71,14 @@ for combo in combinations:
     lambda_n = [rho_imag[n-1] for n in combo]
     initial_theta = [rho_arg[n-1] for n in combo]
 
-    # 未优化
-    alpha = 1.5
-    k = 1e-6
-    A_n = [k / ((n+1)**alpha) for n in range(N)]
-    rho_x = compute_rho(x, lambda_n, A_n, initial_theta, N)
-    delta_x = compute_delta(x, rho_x)
-    error_rho = abs(rho_x - pi_over_x) / pi_over_x
-    print(f"Unoptimized: alpha = {alpha}, k = {k:.6e}")
-    print(f"delta(x) = {float(delta_x):.6e}")
-    print(f"Relative error = {float(error_rho):.6e}")
-    print(f"Improvement over 1/log(x) = {float(error_base/error_rho):.2f}x")
-
-    # 优化
-    result = optimize_params(x, lambda_n, N, initial_theta)
-    alpha_opt, k_opt, theta_n_opt = result.x[0], result.x[1], result.x[2:]
+    # 更精细优化
+    result_fine_tuned = optimize_params_fine_tuned(x, lambda_n, N, initial_theta)
+    alpha_opt, k_opt, theta_n_opt = result_fine_tuned.x[0], result_fine_tuned.x[1], result_fine_tuned.x[2:]
     A_n_opt = [k_opt / ((n+1)**alpha_opt) for n in range(N)]
     rho_x_opt = compute_rho(x, lambda_n, A_n_opt, theta_n_opt, N)
     delta_x_opt = compute_delta(x, rho_x_opt)
     error_rho_opt = abs(rho_x_opt - pi_over_x) / pi_over_x
-    print(f"Optimized: alpha = {alpha_opt:.6e}, k = {k_opt:.6e}")
+    print(f"Fine-Tuned Optimized: alpha = {alpha_opt:.6e}, k = {k_opt:.6e}")
     print(f"delta(x) = {float(delta_x_opt):.6e}")
     print(f"Relative error = {float(error_rho_opt):.6e}")
     print(f"Improvement over 1/log(x) = {float(error_base/error_rho_opt):.2f}x")
@@ -94,12 +86,11 @@ for combo in combinations:
 # 可视化
 x_values = np.linspace(1e6, 1e8, 50)
 pi_over_x_values = [estimate_pi_over_x(x) for x in x_values]
-K_values = [K(x, lambda_n, A_n, theta_n, N) for x in x_values]
 
-plt.plot(x_values, K_values, marker='o', label='K(x) values')
 plt.plot(x_values, pi_over_x_values, label='π(x)/x values')
 plt.xlabel('x')
 plt.ylabel('K(x) / π(x)/x')
 plt.legend()
 plt.grid(True)
 plt.show()
+
