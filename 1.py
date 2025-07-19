@@ -1,7 +1,6 @@
 import numpy as np
 import mpmath
-from scipy.optimize import minimize, dual_annealing
-import matplotlib.pyplot as plt
+from scipy.optimize import minimize
 from mpmath import zetazero, log
 
 # 设置 mpmath 精度
@@ -10,6 +9,24 @@ mpmath.mp.dps = 50
 # 计算参考素数密度 1/log(x)
 def prime_density_ref(x):
     return 1 / log(x)
+
+# 使用 Sieve of Eratosthenes 算法计算 pi(x)
+def sieve_of_eratosthenes(n):
+    """计算小于或等于 n 的素数个数"""
+    if n < 2:
+        return 0
+    is_prime = np.ones(int(n) + 1, dtype=bool)
+    is_prime[0:2] = False  # 0 和 1 不是素数
+    for i in range(2, int(np.sqrt(n)) + 1):
+        if is_prime[i]:
+            is_prime[i*i:n+1:i] = False
+    return np.sum(is_prime)
+
+# 计算 pi(x)/x
+def true_prime_density(x):
+    """计算 pi(x)/x，即真实素数密度"""
+    pi_x = sieve_of_eratosthenes(x)
+    return pi_x / x
 
 # 计算结构密度函数（3-mode模型）
 def rho_structured(x, amps, phases, freqs):
@@ -49,6 +66,9 @@ def test_combination(zero_ids, x_eval=1000):
 
     # 计算参考素数密度
     ref_density = prime_density_ref(x_eval)
+    
+    # 计算真实素数密度 pi(x)/x
+    true_density = true_prime_density(x_eval)
 
     return {
         "zeros": zero_ids,
@@ -59,6 +79,7 @@ def test_combination(zero_ids, x_eval=1000):
         "ref_density": float(ref_density),  # 转换为普通浮点数
         "structured_density": float(rho_opt),  # 转换为普通浮点数
         "logx_density": float(ref_density),  # 转换为普通浮点数
+        "true_prime_density": float(true_density)  # 新增真实素数密度
     }
 
 # 测试的零点组合
@@ -79,4 +100,5 @@ for result in results:
     print(f"1/log(x): {result['logx_density']:.6e}")
     print(f"Structured Density: {result['structured_density']:.6e}")
     print(f"Relative Error: {result['rel_error_opt']:.6e}")
+    print(f"True Prime Density pi(x)/x: {result['true_prime_density']:.6e}")
     print("-" * 50)
